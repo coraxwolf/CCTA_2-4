@@ -166,7 +166,7 @@ func main() {
 		return
 	}
 	fmt.Println("Completed Get Part of Assignment.")
-
+	fmt.Println("")
 	fmt.Println("Starting Put Part of Assignment ....")
 	term = "6182"    // Changing to Spring 2018 term
 	subject = "MATH" // Changing to Math subject
@@ -237,7 +237,6 @@ func main() {
 			}
 			data.NewState = change.NewState // set the new state in the data
 			fmt.Printf("Changed course %s (%d) state from %s to %s\n", data.Name, data.CourseID, data.PreviousState, change.NewState)
-			engl <- data // send the result to the results channel
 		} else {
 			fmt.Printf("Course %s (%d) is already concluded, skipping.\n", data.Name, data.CourseID)
 			continue // skip this course as it is already concluded
