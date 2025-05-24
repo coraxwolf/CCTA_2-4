@@ -20,15 +20,24 @@ type CanvasFrontPage struct {
 	Body string `json:"body"`
 }
 
+type CourseStateChange struct {
+	CourseID     int
+	CurrentState string
+	NewState     string
+	Success      bool
+	Error        error
+}
+
 type CanvasCourse struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	CourseCode  string `json:"course_code"`
-	SisCourseID string `json:"sis_course_id"`
-	Format      string `json:"course_format"`
-	Subject     string `json:"subject"`
-	Catalog     string `json:"catalog"`
-	DefaultView string `json:"default_view"`
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	CourseCode    string `json:"course_code"`
+	SisCourseID   string `json:"sis_course_id"`
+	Format        string `json:"course_format"`
+	Subject       string `json:"subject"`
+	Catalog       string `json:"catalog"`
+	DefaultView   string `json:"default_view"`
+	WorkFlowState string `json:"workflow_state"`
 }
 
 type CheckResult struct {
@@ -119,13 +128,14 @@ func get_paginated_results(req *http.Request, client http.Client) CanvasPaginati
 
 func check_for_modules_link(id int) CheckResult {
 	var result CheckResult
+	fmt.Printf("Using endpoint: %scourses/%d/front_page to get front_page content\n", apicfg.BaseURL, id) // Assignment Detail Note
 	apipath := fmt.Sprintf("%scourses/%d/front_page", apicfg.BaseURL, id)
 	req, err := make_http_request("GET", apipath, nil)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to create request: %v", err)
 		return result
 	}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to make request: %v", err)
@@ -156,7 +166,7 @@ func find_canvas_courses(search_term string) ([]CanvasCourse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := http.Client{Timeout: 90 * time.Second}
 	paginationResult := get_paginated_results(req, client)
 	if paginationResult.Error != nil {
 		return nil, paginationResult.Error
@@ -172,13 +182,75 @@ func find_canvas_courses(search_term string) ([]CanvasCourse, error) {
 	return result, nil
 }
 
-func check_course(code, term, subj string) (bool, error) {
+func check_course(code, term, subj, cat string) (bool, error) {
 	parts := strings.Split(code, "-")
 	if len(parts) != 4 {
 		return false, fmt.Errorf("invalide course sis id: %s", code)
 	}
-	if parts[0] == term && parts[2] == subj {
-		return true, nil
+	if cat == "" {
+		if parts[0] == term && parts[2] == subj {
+			return true, nil
+		}
+		return false, nil
+	} else { // Checking for Math 1314 Courses
+		if parts[0] == term && parts[2] == subj && parts[3] == cat {
+			return true, nil
+		}
+		return false, nil
 	}
-	return false, nil
+}
+
+func change_course_state(id int, state string) CourseStateChange {
+	// Format body as JSON string
+	body := []byte(fmt.Sprintf("{\"course\": { \"event\": \"%s\"}}", state))
+	req, err := make_http_request("PUT", fmt.Sprintf("%scourses/%d", apicfg.BaseURL, id), body)
+	if err != nil {
+		return CourseStateChange{
+			CourseID:     id,
+			CurrentState: "",
+			NewState:     "",
+			Success:      false,
+			Error:        fmt.Errorf("failed to create request: %v", err),
+		}
+	}
+	client := http.Client{Timeout: 60 * time.Second}
+	fmt.Printf("Using PUT endpoint: %scourses/%d with body of %s to change state to %s\n", apicfg.BaseURL, id, body, state) // Assignment Detail Note
+	resp, err := client.Do(req)
+	if err != nil {
+		return CourseStateChange{
+			CourseID:     id,
+			CurrentState: "",
+			NewState:     "",
+			Success:      false,
+			Error:        fmt.Errorf("failed to make request: %v", err),
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return CourseStateChange{
+			CourseID:     id,
+			CurrentState: "",
+			NewState:     "",
+			Success:      false,
+			Error:        fmt.Errorf("request failed with status: %d (%s)", resp.StatusCode, resp.Status),
+		}
+	}
+	byteData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CourseStateChange{
+			CourseID:     id,
+			CurrentState: "",
+			NewState:     "",
+			Success:      false,
+			Error:        fmt.Errorf("failed to read response body: %v", err),
+		}
+	}
+	fmt.Printf("PUT request returned status of %d and a body of %s\n", resp.StatusCode, byteData)
+	return CourseStateChange{
+		CourseID:     id,
+		CurrentState: "",
+		NewState:     state,
+		Success:      true,
+		Error:        nil,
+	}
 }
